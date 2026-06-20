@@ -3,5 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 *.pkl
+*.keras
 data/
 .env
+results/
