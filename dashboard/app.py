@@ -341,43 +341,6 @@ elif page == "🔮 Prédiction client":
                 fig.update_layout(height=280)
                 st.plotly_chart(fig, use_container_width=True)
 
-                st.markdown("---")
-                col_g1, col_g2 = st.columns(2)
-
-                with col_g1:
-                    st.markdown("**Signaux clés de ce client**")
-                    features_client = {
-                        'Ancienneté': min(tenure_months / 59, 1),
-                        'CSAT': (csat_score - 1) / 4,
-                        'Connexions': min(monthly_logins / 54, 1),
-                        'NPS': (nps_score + 100) / 200,
-                        'Paiements OK': 1 - (payment_failures / 5),
-                        'Engagement': min(features_used / 15, 1),
-                    }
-                    noms  = list(features_client.keys())
-                    vals  = list(features_client.values())
-                    bar_c = [PALETTE_OK if v >= 0.5 else PALETTE_DANGER for v in vals]
-                    fig = go.Figure(go.Bar(
-                        x=vals, y=noms, orientation='h',
-                        marker_color=bar_c,
-                        text=[f'{v:.0%}' for v in vals], textposition='outside'
-                    ))
-                    fig.add_vline(x=0.5, line_dash="dash", line_color="#94A3B8")
-                    fig.update_layout(height=320, xaxis_range=[0, 1.2],
-                                      xaxis_title='Score normalisé (0=mauvais, 1=bon)')
-                    st.plotly_chart(fig, use_container_width=True)
-
-                with col_g2:
-                    st.markdown("**Revenu à risque prédit par XGBoost**")
-                    fig = go.Figure(go.Indicator(
-                        mode="number+delta",
-                        value=revenue_at_risk,
-                        title={'text': "Revenue at Risk (€)"},
-                        number={'suffix': " €", 'font': {'size': 48}},
-                    ))
-                    fig.update_layout(height=320)
-                    st.plotly_chart(fig, use_container_width=True)
-
                 st.markdown(f"""
                 <div style='background:{bg_risk}; border:1px solid {border_risk}; border-radius:12px; padding:16px; margin-top:8px;'>
                     <p style='font-weight:700; color:{color_risk}; margin:0 0 6px; font-size:15px;'>{icon_risk} {risk_level.upper()} — Recommandation</p>

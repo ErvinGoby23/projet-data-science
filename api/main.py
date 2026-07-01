@@ -18,7 +18,6 @@ app = FastAPI(
     ## Endpoints disponibles
     - **GET /health** → Vérifie que l'API est active
     - **POST /predict** → Prédit le churn et le revenu à risque
-    - **GET /model-info** → Informations sur les modèles
     """,
     version="1.0.0"
 )
@@ -126,7 +125,8 @@ def predict(client: ClientData):
     Prédit la probabilité de churn et le revenu à risque.
 
     - Classification : **Random Forest**
-    - Régression : **XGBoost**
+    - Régression : **XGBoost**, pondérée par la probabilité de churn
+      (espérance de perte plutôt que tout-ou-rien sur le seuil)
     """
     if not MODELS_LOADED:
         raise HTTPException(status_code=503, detail="Modèles non chargés.")
@@ -144,7 +144,7 @@ def predict(client: ClientData):
         proba_churn = float(rf_clf.predict_proba(X_client)[0, 1])
         churn_pred  = int(proba_churn >= 0.45)
 
-        if proba_churn >= 0.45:
+        if churn_pred == 1:
             risk_level     = "élevé"
             recommendation = "Action immédiate requise — Contacter ce client et proposer une offre de fidélisation"
         elif proba_churn >= 0.3:
@@ -154,11 +154,20 @@ def predict(client: ClientData):
             risk_level     = "faible"
             recommendation = "Client fidèle — Maintenir l'engagement et explorer les opportunités d'upsell"
 
-        # Régression XGBoost — prédiction directe du revenue_at_risk
-        if churn_pred == 1:
-            revenue_at_risk = round(float(np.maximum(xgb_reg.predict(X_client), 0)[0]), 2)
-        else:
-            revenue_at_risk = 0.0
+        # Régression XGBoost — revenue_at_risk pondéré par la probabilité de churn
+        # On calcule toujours la prédiction XGBoost (revenu estimé SI le client
+        # churnait), puis on la pondère par proba_churn pour obtenir une
+        # "perte attendue" continue plutôt qu'un tout-ou-rien basé sur le seuil
+        # de classification (0.45). Cela évite qu'un client à 35-44% de risque
+        # (sous le seuil) soit affiché avec 0€ alors qu'il représente un vrai
+        # risque business partiel.
+        #
+        # NB : XGBoost a été entraîné uniquement sur des churners confirmés,
+        # donc revenue_predicted est une extrapolation pour les clients à faible
+        # proba_churn — c'est une limite assumée du modèle, mais la pondération
+        # par proba_churn atténue ce biais par rapport à un calcul tout-ou-rien.
+        revenue_predicted = float(np.maximum(xgb_reg.predict(X_client), 0)[0])
+        revenue_at_risk    = round(revenue_predicted * proba_churn, 2)
 
         return {
             "status": "success",
@@ -175,8 +184,9 @@ def predict(client: ClientData):
                 "model_used"      : f"Random Forest (ROC-AUC = {RF_METRICS.get('ROC-AUC', 'N/A')})"
             },
             "regression": {
-                "revenue_at_risk": revenue_at_risk,
-                "model_used"     : f"XGBoost (MAE = {XGB_METRICS.get('MAE', 'N/A')}€)"
+                "revenue_at_risk"  : revenue_at_risk,
+                "revenue_if_churn" : round(revenue_predicted, 2),
+                "model_used"       : f"XGBoost (MAE = {XGB_METRICS.get('MAE', 'N/A')}€)"
             },
             "recommendation": recommendation
         }
@@ -188,4 +198,4 @@ def predict(client: ClientData):
 # LANCEMENT
 # ============================================================
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)
